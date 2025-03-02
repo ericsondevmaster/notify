@@ -1,11 +1,16 @@
 import json
+import logging
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from rest_framework import views, response, status
 from django.conf import settings
-from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from webhooks.models import Webhook
 from webhooks.messages import outflow_message
 from services.callmebot import CallMeBot
+
+logger = logging.getLogger(__name__)
 
 
 class WebhookOrderView(views.APIView):
@@ -37,14 +42,24 @@ class WebhookOrderView(views.APIView):
         data['total_value'] = total_value
         data['profit_value'] = profit_value
 
-        send_mail(
-            subject='Nova Saída (SGE)',
-            message='',
-            from_email=f'SGE <{settings.EMAIL_HOST_USER}>',
-            recipient_list=[settings.EMAIL_ADMIN_RECEIVER],
-            html_message=render_to_string('outflow.html', data),
-            fail_silently=False,
-        )
+        try:
+            # Configuração do email
+            msg = MIMEMultipart()
+            msg['Subject'] = 'Nova Saída (SGE)'
+            msg['From'] = f'SGE <{settings.EMAIL_HOST_USER}>'
+            msg['To'] = settings.EMAIL_ADMIN_RECEIVER
+            html_content = render_to_string('outflow.html', data)
+            msg.attach(MIMEText(html_content, 'html'))
+
+            # Envio do email usando smtplib
+            with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
+                server.starttls()
+                server.login(settings.EMAIL_HOST_USER, settings.EMAIL_HOST_PASSWORD)
+                server.send_message(msg)
+
+            logger.info("Email enviado com sucesso!")
+        except Exception as e:
+            logger.error(f"Erro ao enviar email: {e}")
 
         return response.Response(
             data=data,
